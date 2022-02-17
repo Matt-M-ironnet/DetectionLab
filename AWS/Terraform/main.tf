@@ -351,3 +351,105 @@ resource "aws_instance" "win10" {
     delete_on_termination = true
   }
 }
+
+# Everything below this point is to enable AWS VPC traffic mirroring. Mirroring of the Win10 AMI is not possible,
+# currently, because it is on T2 architecture. An additional PR will be submitted with necessary changes to convert
+# it to T3. Changes courtesy of Jon Perez.
+# This helped a ton - https://medium.com/stage-2-security/automating-ids-in-aws-15a3cd2e821c thanks Ryan Damour
+
+resource "aws_ec2_traffic_mirror_target" "logger_target" {
+  description          = "VPC Tap for Logger"
+  network_interface_id = aws_instance.logger.primary_network_interface_id
+}
+
+resource "aws_ec2_traffic_mirror_filter" "logger_filter" {
+  description = "Logger Mirror Filter - Allow All"
+}
+
+resource "aws_ec2_traffic_mirror_filter_rule" "logger_outbound_tcp" {
+  description = "Logger Outbound Rule"
+  traffic_mirror_filter_id = "${aws_ec2_traffic_mirror_filter.logger_filter.id}"
+  destination_cidr_block = "192.168.56.0/24"
+  source_cidr_block = "192.168.56.0/24"
+  rule_number = 1
+  rule_action = "accept"
+  traffic_direction = "egress"
+  protocol = 6
+}
+
+resource "aws_ec2_traffic_mirror_filter_rule" "logger_inbound_tcp" {
+  description = "Logger Inbound Rule"
+  traffic_mirror_filter_id = "${aws_ec2_traffic_mirror_filter.logger_filter.id}"
+  destination_cidr_block = "192.168.56.0/24"
+  source_cidr_block = "192.168.56.0/24"
+  rule_number = 1
+  rule_action = "accept"
+  traffic_direction = "ingress"
+  protocol = 6
+
+destination_port_range {
+  from_port = 1
+  to_port = 65535
+  }
+  source_port_range {
+  from_port = 1
+  to_port = 65535
+  }
+}
+
+resource "aws_ec2_traffic_mirror_filter_rule" "logger_outbound_udp" {
+  description = "Logger Outbound Rule"
+  traffic_mirror_filter_id = "${aws_ec2_traffic_mirror_filter.logger_filter.id}"
+  destination_cidr_block = "192.168.56.0/24"
+  source_cidr_block = "192.168.56.0/24"
+  rule_number = 2
+  rule_action = "accept"
+  traffic_direction = "egress"
+  protocol = 17
+}
+
+resource "aws_ec2_traffic_mirror_filter_rule" "logger_inbound_udp" {
+  description = "Logger Inbound Rule"
+  traffic_mirror_filter_id = "${aws_ec2_traffic_mirror_filter.logger_filter.id}"
+  destination_cidr_block = "192.168.56.0/24"
+  source_cidr_block = "192.168.56.0/24"
+  rule_number = 2
+  rule_action = "accept"
+  traffic_direction = "ingress"
+  protocol = 17
+
+destination_port_range {
+  from_port = 1
+  to_port = 65535
+  }
+  source_port_range {
+  from_port = 1
+  to_port = 65535
+  }
+}
+
+resource "aws_ec2_traffic_mirror_session" "logger_session_dc" {
+  description              = "Logger Mirror Session for dc box"
+  traffic_mirror_filter_id = aws_ec2_traffic_mirror_filter.logger_filter.id
+  traffic_mirror_target_id = aws_ec2_traffic_mirror_target.logger_target.id
+  network_interface_id     = aws_instance.dc.primary_network_interface_id
+  session_number           = 1
+}
+
+# Comment one or none of the following sections based on conversion to T3. 
+#resource "aws_ec2_traffic_mirror_session" "logger_session_wef" {
+#  description              = "Logger Mirror Session for the wef box"
+#  traffic_mirror_filter_id = aws_ec2_traffic_mirror_filter.logger_filter.id
+#  traffic_mirror_target_id = aws_ec2_traffic_mirror_target.logger_target.id
+#  network_interface_id     = aws_instance.wef.primary_network_interface_id
+#  session_number           = 1
+#}
+
+# Win10 mirror session.
+resource "aws_ec2_traffic_mirror_session" "logger_session_win10" {
+  description              = "Logger Mirror Session for the win10 box"
+  traffic_mirror_filter_id = aws_ec2_traffic_mirror_filter.logger_filter.id
+  traffic_mirror_target_id = aws_ec2_traffic_mirror_target.logger_target.id
+  network_interface_id     = aws_instance.win10.primary_network_interface_id
+  session_number           = 1
+}
